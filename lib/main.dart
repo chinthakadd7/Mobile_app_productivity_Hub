@@ -3,6 +3,7 @@ import 'package:new_test/pages/notes_page.dart';
 import 'package:new_test/pages/reminder_page.dart';
 import 'package:new_test/pages/timetable_page.dart';
 import 'package:new_test/pages/userprofile_page.dart';
+import 'package:new_test/pages/login_page.dart';
 
 void main() => runApp(const MyApp());
 
@@ -19,7 +20,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.grey[50],
         useMaterial3: true,
       ),
-      home: const _HomeShell(),
+      home:  LoginPage(),
       routes: {
         '/notes': (_) => const NotesPage(),
         '/reminders': (_) => const RemindersPage(),
@@ -30,14 +31,14 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _HomeShell extends StatefulWidget {
-  const _HomeShell();
+class HomeShell extends StatefulWidget {
+  const HomeShell();
 
   @override
-  State<_HomeShell> createState() => _HomeShellState();
+  State<HomeShell> createState() => HomeShellState();
 }
 
-class _HomeShellState extends State<_HomeShell> {
+class HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   final _pages = const [
