@@ -1,15 +1,31 @@
 import 'package:flutter/material.dart';
 
 class UserProfilePage extends StatefulWidget {
-  const UserProfilePage({super.key});
+  final String userId;
+  final String userName;
+  final String userEmail;
+
+  const UserProfilePage({
+    super.key,
+    this.userId = '',
+    this.userName = 'John Doe',
+    this.userEmail = 'john.doe@example.com',
+  });
 
   @override
   State<UserProfilePage> createState() => _UserProfilePageState();
 }
 
 class _UserProfilePageState extends State<UserProfilePage> {
-  String userName = 'John Doe';
-  String userEmail = 'john.doe@example.com';
+  late String userName;
+  late String userEmail;
+
+  @override
+  void initState() {
+    super.initState();
+    userName = widget.userName;
+    userEmail = widget.userEmail;
+  }
 
   @override
   Widget build(BuildContext context) {
