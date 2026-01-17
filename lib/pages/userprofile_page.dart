@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../Services/firestore_service.dart';
+import '../Services/local_storage_service.dart';
 
 class UserProfilePage extends StatefulWidget {
   final String userId;
@@ -19,12 +21,45 @@ class UserProfilePage extends StatefulWidget {
 class _UserProfilePageState extends State<UserProfilePage> {
   late String userName;
   late String userEmail;
+  final FirestoreService _firestoreService = FirestoreService();
+  final LocalStorageService _storageService = LocalStorageService();
+  
+  int notesCount = 0;
+  int remindersCount = 0;
+  int eventsCount = 0;
 
   @override
   void initState() {
     super.initState();
     userName = widget.userName;
     userEmail = widget.userEmail;
+    _loadCounts();
+  }
+
+  Future<void> _loadCounts() async {
+    if (widget.userId.isNotEmpty) {
+      // Get notes count from Firestore
+      _firestoreService.getUserNotes(widget.userId).listen((notes) {
+        if (mounted) {
+          setState(() {
+            notesCount = notes.length;
+          });
+        }
+      });
+    }
+    
+    // Get reminders count from local storage
+    final reminders = await _storageService.getReminders();
+    
+    // Get timetable events count from local storage
+    final timetables = await _storageService.getTimetables();
+    
+    if (mounted) {
+      setState(() {
+        remindersCount = reminders.length;
+        eventsCount = timetables.length;
+      });
+    }
   }
 
   @override
@@ -149,7 +184,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
         Expanded(
           child: _buildStatCard(
             icon: Icons.note_outlined,
-            count: '24',
+            count: notesCount.toString(),
             label: 'Notes',
             color: Colors.blue,
           ),
@@ -158,7 +193,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
         Expanded(
           child: _buildStatCard(
             icon: Icons.alarm,
-            count: '12',
+            count: remindersCount.toString(),
             label: 'Reminders',
             color: Colors.purple,
           ),
@@ -167,7 +202,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
         Expanded(
           child: _buildStatCard(
             icon: Icons.event,
-            count: '8',
+            count: eventsCount.toString(),
             label: 'Events',
             color: Colors.teal,
           ),

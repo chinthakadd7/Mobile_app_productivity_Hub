@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../Services/local_storage_service.dart';
+import '../Services/notification_service.dart';
 
 class TimetablePage extends StatefulWidget {
   const TimetablePage({super.key});
@@ -9,38 +11,36 @@ class TimetablePage extends StatefulWidget {
 }
 
 class _TimetablePageState extends State<TimetablePage> {
+  final LocalStorageService _storageService = LocalStorageService();
+  final NotificationService _notificationService = NotificationService();
   DateTime selectedDate = DateTime.now();
-  
-  final List<Map<String, dynamic>> events = [
-    {
-      'date': DateTime.now(),
-      'startTime': TimeOfDay(hour: 9, minute: 0),
-      'endTime': TimeOfDay(hour: 10, minute: 30),
-      'details': 'Mathematics Lecture',
-      'color': Colors.blue,
-    },
-    {
-      'date': DateTime.now(),
-      'startTime': TimeOfDay(hour: 11, minute: 0),
-      'endTime': TimeOfDay(hour: 12, minute: 30),
-      'details': 'Physics Lab',
-      'color': Colors.green,
-    },
-    {
-      'date': DateTime.now(),
-      'startTime': TimeOfDay(hour: 14, minute: 0),
-      'endTime': TimeOfDay(hour: 15, minute: 30),
-      'details': 'Project Meeting',
-      'color': Colors.orange,
-    },
-  ];
+  List<Map<String, dynamic>> _timetables = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+    _loadTimetables();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await _notificationService.initialize();
+  }
+
+  Future<void> _loadTimetables() async {
+    final timetables = await _storageService.getTimetables();
+    setState(() {
+      _timetables = timetables;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final todayEvents = events.where((event) {
-      return event['date'].day == selectedDate.day &&
-          event['date'].month == selectedDate.month &&
-          event['date'].year == selectedDate.year;
+    final todayEvents = _timetables.where((event) {
+      final eventDate = DateTime.parse(event['date']);
+      return eventDate.day == selectedDate.day &&
+          eventDate.month == selectedDate.month &&
+          eventDate.year == selectedDate.year;
     }).toList();
 
     return Scaffold(
@@ -126,7 +126,7 @@ class _TimetablePageState extends State<TimetablePage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          _showEventDialog(context, null);
+          _showEventDialog(context, null, null);
         },
         backgroundColor: Colors.teal[600],
         icon: const Icon(Icons.add),
@@ -241,8 +241,15 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _buildEventCard(Map<String, dynamic> event, int index) {
-    final startTime = event['startTime'] as TimeOfDay;
-    final endTime = event['endTime'] as TimeOfDay;
+    final startHour = event['startHour'] ?? 9;
+    final startMinute = event['startMinute'] ?? 0;
+    final endHour = event['endHour'] ?? 10;
+    final endMinute = event['endMinute'] ?? 0;
+    final startTime = TimeOfDay(hour: startHour, minute: startMinute);
+    final endTime = TimeOfDay(hour: endHour, minute: endMinute);
+    final colorValue = event['color'] ?? Colors.blue.value;
+    final color = Color(colorValue);
+    final id = event['id'];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -263,7 +270,7 @@ class _TimetablePageState extends State<TimetablePage> {
             Container(
               width: 6,
               decoration: BoxDecoration(
-                color: event['color'],
+                color: color,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(16),
                   bottomLeft: Radius.circular(16),
@@ -278,12 +285,12 @@ class _TimetablePageState extends State<TimetablePage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: (event['color'] as Color).withValues(alpha: 0.1),
+                        color: color.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
                         Icons.event,
-                        color: event['color'],
+                        color: color,
                         size: 24,
                       ),
                     ),
@@ -322,7 +329,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     IconButton(
                       icon: const Icon(Icons.more_vert, color: Colors.grey),
                       onPressed: () {
-                        _showEventOptions(context, index);
+                        _showEventOptions(context, id, event);
                       },
                     ),
                   ],
@@ -335,7 +342,7 @@ class _TimetablePageState extends State<TimetablePage> {
     );
   }
 
-  void _showEventOptions(BuildContext context, int index) {
+  void _showEventOptions(BuildContext context, String id, Map<String, dynamic> event) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -351,18 +358,22 @@ class _TimetablePageState extends State<TimetablePage> {
               title: const Text('Edit Event'),
               onTap: () {
                 Navigator.pop(context);
-                _showEventDialog(context, index);
+                _showEventDialog(context, id, event);
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete Event',
                   style: TextStyle(color: Colors.red)),
-              onTap: () {
-                setState(() {
-                  events.removeAt(index);
-                });
-                Navigator.pop(context);
+              onTap: () async {
+                // Cancel notification before deleting
+                final index = _timetables.indexWhere((t) => t['id'] == id);
+                if (index != -1) {
+                  await _notificationService.cancelNotification(1000 + index);
+                }
+                await _storageService.deleteTimetable(id);
+                await _loadTimetables();
+                if (context.mounted) Navigator.pop(context);
               },
             ),
           ],
@@ -385,18 +396,17 @@ class _TimetablePageState extends State<TimetablePage> {
     }
   }
 
-  void _showEventDialog(BuildContext context, int? index) {
+  void _showEventDialog(BuildContext context, String? id, Map<String, dynamic>? event) {
     final detailsController = TextEditingController(
-      text: index != null ? events[index]['details'] : '',
+      text: event != null ? event['details'] : '',
     );
-    TimeOfDay startTime = index != null
-        ? events[index]['startTime']
+    TimeOfDay startTime = event != null
+        ? TimeOfDay(hour: event['startHour'] ?? 9, minute: event['startMinute'] ?? 0)
         : const TimeOfDay(hour: 9, minute: 0);
-    TimeOfDay endTime = index != null
-        ? events[index]['endTime']
+    TimeOfDay endTime = event != null
+        ? TimeOfDay(hour: event['endHour'] ?? 10, minute: event['endMinute'] ?? 0)
         : const TimeOfDay(hour: 10, minute: 0);
-    Color selectedColor =
-        index != null ? events[index]['color'] : Colors.blue;
+    Color selectedColor = event != null ? Color(event['color'] ?? Colors.blue.value) : Colors.blue;
 
     showDialog(
       context: context,
@@ -405,7 +415,7 @@ class _TimetablePageState extends State<TimetablePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Text(index != null ? 'Edit Event' : 'New Event'),
+          title: Text(id != null ? 'Edit Event' : 'New Event'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -515,26 +525,78 @@ class _TimetablePageState extends State<TimetablePage> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                if (index != null) {
-                  setState(() {
-                    events[index]['details'] = detailsController.text;
-                    events[index]['startTime'] = startTime;
-                    events[index]['endTime'] = endTime;
-                    events[index]['color'] = selectedColor;
-                  });
-                } else {
-                  setState(() {
-                    events.add({
-                      'date': selectedDate,
-                      'startTime': startTime,
-                      'endTime': endTime,
+              onPressed: () async {
+                if (detailsController.text.isNotEmpty) {
+                  if (id != null) {
+                    await _storageService.updateTimetable(id, {
+                      'date': selectedDate.toIso8601String(),
+                      'startHour': startTime.hour,
+                      'startMinute': startTime.minute,
+                      'endHour': endTime.hour,
+                      'endMinute': endTime.minute,
                       'details': detailsController.text,
-                      'color': selectedColor,
+                      'color': selectedColor.value,
                     });
-                  });
+                    
+                    // Reschedule notification for updated timetable entry
+                    final index = _timetables.indexWhere((t) => t['id'] == id);
+                    if (index != -1) {
+                      final notificationId = 1000 + index;
+                      await _notificationService.cancelNotification(notificationId);
+                      
+                      final eventTime = DateTime(
+                        selectedDate.year,
+                        selectedDate.month,
+                        selectedDate.day,
+                        startTime.hour,
+                        startTime.minute,
+                      );
+                      
+                      if (eventTime.isAfter(DateTime.now())) {
+                        await _notificationService.scheduleNotification(
+                          id: notificationId,
+                          title: 'Timetable Event',
+                          body: detailsController.text,
+                          scheduledDate: eventTime,
+                        );
+                      }
+                    }
+                  } else {
+                    await _storageService.saveTimetable({
+                      'date': selectedDate.toIso8601String(),
+                      'startHour': startTime.hour,
+                      'startMinute': startTime.minute,
+                      'endHour': endTime.hour,
+                      'endMinute': endTime.minute,
+                      'details': detailsController.text,
+                      'color': selectedColor.value,
+                    });
+                    
+                    // Schedule notification for new timetable entry
+                    final timetables = await _storageService.getTimetables();
+                    final notificationId = 1000 + timetables.length; // Use different ID range for timetables
+                    final eventTime = DateTime(
+                      selectedDate.year,
+                      selectedDate.month,
+                      selectedDate.day,
+                      startTime.hour,
+                      startTime.minute,
+                    );
+                    
+                    if (eventTime.isAfter(DateTime.now())) {
+                      await _notificationService.scheduleNotification(
+                        id: notificationId,
+                        title: 'Timetable Event',
+                        body: detailsController.text.isEmpty 
+                            ? 'Event starting now' 
+                            : detailsController.text,
+                        scheduledDate: eventTime,
+                      );
+                    }
+                  }
+                  await _loadTimetables();
+                  if (context.mounted) Navigator.pop(context);
                 }
-                Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal[600],
@@ -542,7 +604,7 @@ class _TimetablePageState extends State<TimetablePage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: Text(index != null ? 'Update' : 'Save'),
+              child: Text(id != null ? 'Update' : 'Save'),
             ),
           ],
         ),

@@ -1,11 +1,11 @@
 class NoteModel {
-  String noteId;
+  String? noteId;
   String userId;
   String title;
   String description;
 
   NoteModel({
-    required this.noteId,
+    this.noteId,
     required this.userId,
     required this.title,
     required this.description,

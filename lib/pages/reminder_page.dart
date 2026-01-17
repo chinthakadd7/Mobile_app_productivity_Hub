@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../Services/local_storage_service.dart';
+import '../Services/notification_service.dart';
 
 class RemindersPage extends StatefulWidget {
   const RemindersPage({super.key});
@@ -8,26 +10,236 @@ class RemindersPage extends StatefulWidget {
 }
 
 class _RemindersPageState extends State<RemindersPage> {
-  final List<Map<String, dynamic>> reminders = [
-    {
-      'title': 'Team Meeting',
-      'description': 'Weekly sync with development team',
-      'repeat': 'Weekly',
-      'isCompleted': false,
-    },
-    {
-      'title': 'Gym',
-      'description': 'Evening workout session',
-      'repeat': 'Daily',
-      'isCompleted': false,
-    },
-    {
-      'title': 'Pay Bills',
-      'description': 'Monthly utility payments',
-      'repeat': 'Monthly',
-      'isCompleted': true,
-    },
-  ];
+  final LocalStorageService _storageService = LocalStorageService();
+  final NotificationService _notificationService = NotificationService();
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+  DateTime? _selectedDateTime;
+  List<Map<String, dynamic>> _reminders = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+    _loadReminders();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await _notificationService.initialize();
+  }
+
+  Future<void> _loadReminders() async {
+    final reminders = await _storageService.getReminders();
+    setState(() {
+      _reminders = reminders;
+    });
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectDateTime() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (date != null && mounted) {
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+      );
+
+      if (time != null) {
+        setState(() {
+          _selectedDateTime = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            time.hour,
+            time.minute,
+          );
+        });
+      }
+    }
+  }
+
+  void _showAddReminderDialog() {
+    _titleController.clear();
+    _descriptionController.clear();
+    _selectedDateTime = null;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add Reminder'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Title',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await _selectDateTime();
+                    setDialogState(() {});
+                  },
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text(
+                    _selectedDateTime == null
+                        ? 'Select Date & Time'
+                        : '${_selectedDateTime!.day}/${_selectedDateTime!.month}/${_selectedDateTime!.year} ${_selectedDateTime!.hour}:${_selectedDateTime!.minute.toString().padLeft(2, '0')}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (_titleController.text.isNotEmpty && _selectedDateTime != null) {
+                  final reminderData = {
+                    'title': _titleController.text,
+                    'description': _descriptionController.text,
+                    'dateTime': _selectedDateTime!.toIso8601String(),
+                    'isCompleted': false,
+                  };
+                  await _storageService.saveReminder(reminderData);
+                  
+                  // Schedule notification
+                  final reminders = await _storageService.getReminders();
+                  final notificationId = reminders.length - 1;
+                  await _notificationService.scheduleNotification(
+                    id: notificationId,
+                    title: _titleController.text,
+                    body: _descriptionController.text.isEmpty 
+                        ? 'Reminder' 
+                        : _descriptionController.text,
+                    scheduledDate: _selectedDateTime!,
+                  );
+                  
+                  await _loadReminders();
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditReminderDialog(String id, Map<String, dynamic> reminder) {
+    _titleController.text = reminder['title'];
+    _descriptionController.text = reminder['description'];
+    _selectedDateTime = DateTime.parse(reminder['dateTime']);
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Reminder'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Title',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await _selectDateTime();
+                    setDialogState(() {});
+                  },
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text(
+                    '${_selectedDateTime!.day}/${_selectedDateTime!.month}/${_selectedDateTime!.year} ${_selectedDateTime!.hour}:${_selectedDateTime!.minute.toString().padLeft(2, '0')}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (_titleController.text.isNotEmpty && _selectedDateTime != null) {
+                  await _storageService.updateReminder(id, {
+                    'title': _titleController.text,
+                    'description': _descriptionController.text,
+                    'dateTime': _selectedDateTime!.toIso8601String(),
+                    'isCompleted': reminder['isCompleted'],
+                  });
+                  
+                  // Reschedule notification
+                  final index = _reminders.indexWhere((r) => r['id'] == id);
+                  if (index != -1) {
+                    await _notificationService.cancelNotification(index);
+                    await _notificationService.scheduleNotification(
+                      id: index,
+                      title: _titleController.text,
+                      body: _descriptionController.text.isEmpty 
+                          ? 'Reminder' 
+                          : _descriptionController.text,
+                      scheduledDate: _selectedDateTime!,
+                    );
+                  }
+                  
+                  await _loadReminders();
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              child: const Text('Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,266 +256,155 @@ class _RemindersPageState extends State<RemindersPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list, color: Colors.black87),
-            onPressed: () {},
-          ),
-        ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: reminders.length,
-        itemBuilder: (context, index) {
-          final reminder = reminders[index];
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
-              leading: Checkbox(
-                value: reminder['isCompleted'],
-                onChanged: (value) {
-                  setState(() {
-                    reminder['isCompleted'] = value;
-                  });
-                },
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              title: Text(
-                reminder['title']!,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: reminder['isCompleted']
-                      ? Colors.grey[400]
-                      : Colors.black87,
-                  decoration: reminder['isCompleted']
-                      ? TextDecoration.lineThrough
-                      : null,
-                ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      reminder['description']!,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getRepeatColor(reminder['repeat']),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        reminder['repeat']!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              trailing: PopupMenuButton(
-                icon: const Icon(Icons.more_vert, color: Colors.grey),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, size: 20),
-                        SizedBox(width: 12),
-                        Text('Edit'),
-                      ],
+      body: _reminders.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.alarm_outlined, size: 100, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No reminders yet',
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 12),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap + to create your first reminder',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[400]),
                   ),
                 ],
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _showReminderDialog(context, index);
-                  } else if (value == 'delete') {
-                    setState(() {
-                      reminders.removeAt(index);
-                    });
-                  }
-                },
               ),
-              onTap: () {
-                _showReminderDialog(context, index);
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _reminders.length,
+              itemBuilder: (context, index) {
+                final reminder = _reminders[index];
+                final dateTime = DateTime.parse(reminder['dateTime']);
+                final id = reminder['id'];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    leading: Checkbox(
+                      value: reminder['isCompleted'] ?? false,
+                      onChanged: (value) async {
+                        await _storageService.updateReminder(id, {
+                          ...reminder,
+                          'isCompleted': value ?? false,
+                        });
+                        await _loadReminders();
+                      },
+                    ),
+                    title: Text(
+                      reminder['title'],
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                        decoration: (reminder['isCompleted'] ?? false)
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (reminder['description'] != null && reminder['description'].isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              reminder['description'],
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calendar_today,
+                                  size: 14, color: Colors.blue[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.grey),
+                      onSelected: (value) async {
+                        if (value == 'edit') {
+                          _showEditReminderDialog(id, reminder);
+                        } else if (value == 'delete') {
+                          final index = _reminders.indexWhere((r) => r['id'] == id);
+                          if (index != -1) {
+                            await _notificationService.cancelNotification(index);
+                          }
+                          await _storageService.deleteReminder(id);
+                          await _loadReminders();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 20),
+                              SizedBox(width: 8),
+                              Text('Edit'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, size: 20, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('Delete',
+                                  style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
               },
             ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          _showReminderDialog(context, null);
-        },
-        backgroundColor: Colors.purple[600],
-        icon: const Icon(Icons.alarm_add),
-        label: const Text('New Reminder'),
-      ),
-    );
-  }
-
-  Color _getRepeatColor(String repeat) {
-    switch (repeat.toLowerCase()) {
-      case 'daily':
-        return Colors.blue[600]!;
-      case 'weekly':
-        return Colors.green[600]!;
-      case 'monthly':
-        return Colors.orange[600]!;
-      default:
-        return Colors.grey[600]!;
-    }
-  }
-
-  void _showReminderDialog(BuildContext context, int? index) {
-    final titleController = TextEditingController(
-      text: index != null ? reminders[index]['title'] : '',
-    );
-    final descController = TextEditingController(
-      text: index != null ? reminders[index]['description'] : '',
-    );
-    String selectedRepeat =
-        index != null ? reminders[index]['repeat'] : 'Daily';
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(index != null ? 'Edit Reminder' : 'New Reminder'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  decoration: InputDecoration(
-                    labelText: 'Title',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: descController,
-                  decoration: InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedRepeat,
-                  decoration: InputDecoration(
-                    labelText: 'Repeat',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  items: ['Daily', 'Weekly', 'Monthly', 'Never']
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                      .toList(),
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedRepeat = value!;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (index != null) {
-                  setState(() {
-                    reminders[index]['title'] = titleController.text;
-                    reminders[index]['description'] = descController.text;
-                    reminders[index]['repeat'] = selectedRepeat;
-                  });
-                } else {
-                  setState(() {
-                    reminders.add({
-                      'title': titleController.text,
-                      'description': descController.text,
-                      'repeat': selectedRepeat,
-                      'isCompleted': false,
-                    });
-                  });
-                }
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple[600],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(index != null ? 'Update' : 'Save'),
-            ),
-          ],
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddReminderDialog,
+        backgroundColor: Colors.blue,
+        child: const Icon(Icons.add),
       ),
     );
   }
