@@ -3,7 +3,7 @@ import '../Services/firestore_service.dart';
 import '../Services/local_storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../pages/login_page.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 
 class UserProfilePage extends StatefulWidget {
   final String userId;
