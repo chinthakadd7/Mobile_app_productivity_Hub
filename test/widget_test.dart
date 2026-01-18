@@ -8,7 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:new_test/main.dart';
+import 'package:Actify/main.dart';
 
 void main() {
   testWidgets('App boots and navigates between tabs', (WidgetTester tester) async {

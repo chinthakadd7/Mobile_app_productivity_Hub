@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:new_test/pages/notes_page.dart';
-import 'package:new_test/pages/reminder_page.dart';
-import 'package:new_test/pages/timetable_page.dart';
-import 'package:new_test/pages/userprofile_page.dart';
-import 'package:new_test/pages/login_page.dart';
+import 'package:Actify/pages/notes_page.dart';
+import 'package:Actify/pages/reminder_page.dart';
+import 'package:Actify/pages/timetable_page.dart';
+import 'package:Actify/pages/userprofile_page.dart';
+import 'package:Actify/pages/login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
